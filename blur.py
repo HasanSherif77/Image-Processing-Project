@@ -6,7 +6,7 @@ import numpy as np
 import os
 import datetime
 
-def enhance_image(img, kernel_size=(3, 3)):
+def enhance_image(img, kernel_size=5):
     """
     Enhanced image processing with noise reduction and sharpening.
     
@@ -14,23 +14,29 @@ def enhance_image(img, kernel_size=(3, 3)):
     -----------
     img : numpy.ndarray
         Input image in BGR format
-    kernel_size : tuple, optional
-        Gaussian kernel size (default: (3, 3))
+    kernel_size : int, optional
+        Gaussian kernel size (default: 5). Should be an odd integer.
         
     Returns:
     --------
     numpy.ndarray
         Enhanced image in BGR format
     """
+    # Convert kernel_size to tuple if it's an integer
+    if isinstance(kernel_size, int):
+        ksize = (kernel_size, kernel_size)
+    else:
+        ksize = kernel_size
+    
     # Noise reduction with Gaussian blur
-    blurred = cv2.GaussianBlur(img, kernel_size, 0)
+    blurred = cv2.GaussianBlur(img, ksize, 0)
 
     # Simple unsharp mask (deblurring)
     enhanced = cv2.addWeighted(img, 1.2, blurred, -0.2, 0)
 
     return enhanced
 
-def apply(image, kernel_size=(3, 3), output_dir="outputs/blur"):
+def apply(image, kernel_size=5, output_dir="outputs/blur"):
     """
     Main function for GUI integration.
     Applies blur enhancement and saves the result.
@@ -39,8 +45,8 @@ def apply(image, kernel_size=(3, 3), output_dir="outputs/blur"):
     -----------
     image : numpy.ndarray
         Input image in BGR format
-    kernel_size : tuple, optional
-        Gaussian kernel size (default: (3, 3))
+    kernel_size : int or tuple, optional
+        Gaussian kernel size (default: 5). Can be integer or (width, height) tuple.
     output_dir : str
         Directory to save output
         
@@ -89,13 +95,14 @@ def apply(image, kernel_size=(3, 3), output_dir="outputs/blur"):
     print(f"Blur Enhancement Complete:")
     print(f"  Original shape: {img.shape}")
     print(f"  Enhanced shape: {enhanced.shape}")
+    print(f"  Kernel size: {kernel_size}")
     print(f"  Mean pixel difference: {mean_diff:.2f}")
     print(f"  Saved to: {output_path}")
     
     return enhanced, output_info
 
 # For backward compatibility and testing
-def quick_apply(image):
+def quick_apply(image, kernel_size=5):
     """
     Simple blur enhancement without saving.
     Good for quick testing.
@@ -104,13 +111,15 @@ def quick_apply(image):
     -----------
     image : numpy.ndarray
         Input image in BGR format
+    kernel_size : int or tuple, optional
+        Gaussian kernel size (default: 5)
         
     Returns:
     --------
     numpy.ndarray
         Enhanced image in BGR format
     """
-    return enhance_image(image.copy())
+    return enhance_image(image.copy(), kernel_size)
 
 # For testing the module independently
 if __name__ == "__main__":
