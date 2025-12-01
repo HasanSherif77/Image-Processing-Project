@@ -1,571 +1,393 @@
+# image_processing_gui.py
+import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk
+from tkinter import filedialog, messagebox, ttk
 import cv2
+import numpy as np
+from PIL import Image, ImageTk
 import os
+import threading
+import time
 
-import adjust_Brightness
-import blur
-import sharpening
-import segmentation
+# Import the feature modules
+try:
+    from adjust_Brightness import apply as apply_brightness
+    from edge_Sharpening import apply as apply_sharpening
+    from blur import apply as apply_blur
+    from segmentation import apply as apply_segmentation
+except ImportError:
+    # Fallback to placeholder functions if modules not found
+    print("Warning: Some feature modules not found. Using placeholders.")
+    # Define placeholder functions
+    def apply_brightness(img, output_dir="outputs/brightness"):
+        return img.copy(), {'output_path': '', 'feature': 'brightness'}
+    
+    def apply_sharpening(img, output_dir="outputs/sharpening"):
+        return img.copy(), {'output_path': '', 'feature': 'sharpening'}
+    
+    def apply_blur(img, output_dir="outputs/blur"):
+        return img.copy(), {'output_path': '', 'feature': 'blur'}
+    
+    def apply_segmentation(img, output_dir="outputs/segmentation"):
+        return img.copy(), {'output_path': '', 'feature': 'segmentation'}
 
-
-class ImageApp:
+class ImageProcessingGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Image Processor")
-        self.root.geometry("1400x950")
-        self.root.configure(bg="#1b1b1d")
-
-        self.original = None
-        self.final = None
-        self.feature_images = [None]*4
-        self.current_image_path = None  # Store the path of loaded image
-
-        # Use the 'apply' function from each module
-        self.features = [
-            self.apply_brightness_adjustment,  # Custom function for brightness
-            blur.apply,
-            sharpening.apply,
-            segmentation.apply
-        ]
-        self.feature_names = [
-            "Adjust Brightness",
-            "Apply Blur",
-            "Sharpen Image",
-            "Segment Image"
+        self.root.title("Image Processing Suite")
+        self.root.geometry("1400x800")
+        
+        # Variables
+        self.original_image = None
+        self.current_image = None
+        self.output_images = {}
+        self.output_info = {}
+        self.processing = False
+        
+        # Create output directories
+        self.create_output_directories()
+        
+        # Setup GUI
+        self.setup_ui()
+        
+    def create_output_directories(self):
+        """Create the output folder structure"""
+        output_dirs = [
+            "outputs",
+            "outputs/brightness",
+            "outputs/sharpening", 
+            "outputs/blur",
+            "outputs/segmentation",
+            "outputs/final"
         ]
         
-        # Output directory
-        self.output_dir = "output"
-        os.makedirs(self.output_dir, exist_ok=True)
-
-        self.build_ui()
-
-    def build_ui(self):
-        # Scrollable frame setup
-        main_canvas = tk.Canvas(self.root, bg="#1b1b1d")
-        main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = tk.Scrollbar(self.root, orient=tk.VERTICAL, command=main_canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        main_canvas.configure(yscrollcommand=scrollbar.set)
-
-        scrollable_frame = tk.Frame(main_canvas, bg="#1b1b1d")
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-        )
-        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-
+        for dir_path in output_dirs:
+            os.makedirs(dir_path, exist_ok=True)
+            print(f"Created directory: {dir_path}")
+    
+    def setup_ui(self):
+        # Configure grid weights
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
+        
+        # Top frame for controls
+        control_frame = tk.Frame(self.root, height=100, bg='#f0f0f0')
+        control_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
+        control_frame.grid_propagate(False)
+        
         # Title
-        tk.Label(
-            scrollable_frame,
-            text="Image Processor",
-            bg="#1b1b1d",
-            fg="white",
-            font=("Segoe UI", 28, "bold")
-        ).pack(pady=15)
-
-        # Load Image Button
-        load_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        load_frame.pack(pady=10)
+        title_label = tk.Label(control_frame, text="Image Processing Suite", 
+                              font=('Arial', 20, 'bold'), bg='#f0f0f0')
+        title_label.pack(pady=10)
         
-        tk.Button(
-            load_frame,
-            text="📁 Load Image",
-            command=self.load_image,
-            bg="#190c28",
-            fg="white",
-            font=("Segoe UI", 13, "bold"),
-            bd=0,
-            height=2,
-            width=15
-        ).pack(side=tk.LEFT, padx=5)
+        # Button frame
+        button_frame = tk.Frame(control_frame, bg='#f0f0f0')
+        button_frame.pack(pady=10)
         
-        # Save Final Image Button
-        tk.Button(
-            load_frame,
-            text="💾 Save Final Image",
-            command=self.save_final_image,
-            bg="#006400",
-            fg="white",
-            font=("Segoe UI", 13, "bold"),
-            bd=0,
-            height=2,
-            width=15
-        ).pack(side=tk.LEFT, padx=5)
+        # Load Image button
+        load_btn = tk.Button(button_frame, text="Load Image", command=self.load_image,
+                           font=('Arial', 12), bg='#4CAF50', fg='white',
+                           padx=20, pady=10, relief='raised')
+        load_btn.pack(side='left', padx=10)
         
-        # Open Output Folder Button
-        tk.Button(
-            load_frame,
-            text="📂 Open Output Folder",
-            command=self.open_output_folder,
-            bg="#8B4513",
-            fg="white",
-            font=("Segoe UI", 13, "bold"),
-            bd=0,
-            height=2,
-            width=18
-        ).pack(side=tk.LEFT, padx=5)
-
-        # Status Label
-        self.status_label = tk.Label(
-            scrollable_frame,
-            text="No image loaded",
-            bg="#1b1b1d",
-            fg="#888888",
-            font=("Segoe UI", 11)
-        )
+        # Process All Features button
+        process_btn = tk.Button(button_frame, text="Process All Features", command=self.process_all_features,
+                              font=('Arial', 12), bg='#2196F3', fg='white',
+                              padx=20, pady=10, relief='raised', state='disabled')
+        process_btn.pack(side='left', padx=10)
+        self.process_btn = process_btn
+        
+        # Status label
+        self.status_label = tk.Label(control_frame, text="Ready to load image", 
+                                    font=('Arial', 10), bg='#f0f0f0', fg='#666')
         self.status_label.pack(pady=5)
-
-        # Top frame: Before / After final
-        top_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        top_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
-
-        tk.Label(top_frame, text="Before / After Final",
-                 bg="#1b1b1d", fg="white", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-
-        self.top_canvas = tk.Canvas(top_frame, bg="#0e0e0f", height=400)
-        self.top_canvas.pack(fill=tk.BOTH, expand=True)
-
-        # Bottom frame: 4 feature previews
-        bottom_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        bottom_frame.pack(fill=tk.X, expand=False, padx=20, pady=10)
-
-        tk.Label(bottom_frame, text="Feature Previews",
-                 bg="#1b1b1d", fg="white", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-
-        self.feature_frame = tk.Frame(bottom_frame, bg="#1b1b1d")
-        self.feature_frame.pack(fill=tk.X, expand=True)
-
-        self.feature_canvases = []
-        self.feature_labels = []
-        for i in range(4):
-            # Container for each feature
-            feature_container = tk.Frame(self.feature_frame, bg="#1b1b1d")
-            feature_container.pack(side=tk.LEFT, padx=5, pady=5, expand=True)
+        
+        # Progress bar
+        self.progress = ttk.Progressbar(control_frame, mode='indeterminate', length=300)
+        
+        # Main content area
+        content_frame = tk.Frame(self.root)
+        content_frame.grid(row=1, column=0, columnspan=2, sticky='nsew', padx=10, pady=10)
+        content_frame.grid_rowconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(1, weight=1)
+        
+        # Left panel - Original Image
+        left_frame = tk.Frame(content_frame, relief='groove', bd=2)
+        left_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        
+        original_label = tk.Label(left_frame, text="Original Image", font=('Arial', 14, 'bold'))
+        original_label.pack(pady=10)
+        
+        self.original_canvas = tk.Canvas(left_frame, width=600, height=500, bg='#e0e0e0')
+        self.original_canvas.pack(padx=10, pady=10)
+        
+        # Right panel - Final Output Image
+        right_frame = tk.Frame(content_frame, relief='groove', bd=2)
+        right_frame.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
+        
+        output_label = tk.Label(right_frame, text="Final Output Image", font=('Arial', 14, 'bold'))
+        output_label.pack(pady=10)
+        
+        self.output_canvas = tk.Canvas(right_frame, width=600, height=500, bg='#e0e0e0')
+        self.output_canvas.pack(padx=10, pady=10)
+        
+        # Bottom frame for feature outputs
+        bottom_frame = tk.Frame(self.root, height=200, relief='groove', bd=2)
+        bottom_frame.grid(row=2, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
+        bottom_frame.grid_propagate(False)
+        
+        features_label = tk.Label(bottom_frame, text="Feature Outputs", font=('Arial', 12, 'bold'))
+        features_label.pack(pady=10)
+        
+        # Create frames for each feature output
+        features_frame = tk.Frame(bottom_frame)
+        features_frame.pack(pady=10)
+        
+        self.feature_labels = {}
+        features = ['Brightness', 'Sharpening', 'Blur', 'Segmentation']
+        
+        for i, feature in enumerate(features):
+            frame = tk.Frame(features_frame, relief='ridge', bd=1)
+            frame.grid(row=0, column=i, padx=20, pady=5)
             
-            # Feature label
-            label = tk.Label(
-                feature_container,
-                text=self.feature_names[i],
-                bg="#1b1b1d",
-                fg="white",
-                font=("Segoe UI", 11, "bold")
-            )
-            label.pack()
+            label = tk.Label(frame, text=feature, font=('Arial', 10))
+            label.pack(pady=5)
             
-            # Canvas for image
-            c = tk.Canvas(feature_container, bg="#0e0e0f", width=300, height=200)
-            c.pack()
+            status = tk.Label(frame, text="Not processed", fg='gray', font=('Arial', 9))
+            status.pack(pady=5)
             
-            self.feature_canvases.append(c)
-            self.feature_labels.append(label)
-
-        # Buttons for applying features
-        btn_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        btn_frame.pack(pady=10)
-
-        # Feature buttons with colors
-        button_colors = ["#3a3aff", "#ff6b6b", "#4ecdc4", "#ffe66d"]
-        
-        for i in range(4):
-            tk.Button(
-                btn_frame,
-                text=self.feature_names[i],
-                command=lambda idx=i: self.apply_feature(idx),
-                bg=button_colors[i],
-                fg="white",
-                font=("Segoe UI", 12, "bold"),
-                bd=0,
-                height=2,
-                width=15,
-                relief=tk.RAISED
-            ).pack(side=tk.LEFT, padx=10)
-
-        # Special buttons
-        special_btn_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        special_btn_frame.pack(pady=10)
-
-        tk.Button(
-            special_btn_frame,
-            text="✨ Apply All Features",
-            command=self.apply_all,
-            bg="#ff9900",
-            fg="white",
-            font=("Segoe UI", 12, "bold"),
-            bd=0,
-            height=2,
-            width=18
-        ).pack(side=tk.LEFT, padx=10)
-
-        tk.Button(
-            special_btn_frame,
-            text="🔄 Reset All",
-            command=self.reset_all,
-            bg="#dc3545",
-            fg="white",
-            font=("Segoe UI", 12, "bold"),
-            bd=0,
-            height=2,
-            width=15
-        ).pack(side=tk.LEFT, padx=10)
-
-        # Console output area
-        console_frame = tk.Frame(scrollable_frame, bg="#1b1b1d")
-        console_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
-        
-        tk.Label(console_frame, text="Processing Log",
-                 bg="#1b1b1d", fg="white", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-        
-        # Text widget for console output
-        self.console_text = tk.Text(
-            console_frame,
-            bg="#0e0e0f",
-            fg="#00ff00",
-            font=("Consolas", 10),
-            height=10,
-            wrap=tk.WORD,
-            state=tk.DISABLED
-        )
-        
-        # Add scrollbar to console
-        console_scrollbar = tk.Scrollbar(console_frame, command=self.console_text.yview)
-        self.console_text.configure(yscrollcommand=console_scrollbar.set)
-        
-        self.console_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        console_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-    def log_message(self, message, color="#00ff00"):
-        """Add a message to the console log"""
-        self.console_text.config(state=tk.NORMAL)
-        self.console_text.insert(tk.END, message + "\n", color)
-        self.console_text.see(tk.END)  # Auto-scroll to bottom
-        self.console_text.config(state=tk.DISABLED)
-        self.root.update()  # Update GUI immediately
-
+            self.feature_labels[feature.lower()] = status
+    
     def load_image(self):
-        path = filedialog.askopenfilename(
-            title="Select Image",
+        """Load an image file"""
+        file_path = filedialog.askopenfilename(
+            title="Select an image",
             filetypes=[
                 ("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.tif"),
                 ("All files", "*.*")
             ]
         )
         
-        if not path:
-            return
-            
-        self.original = cv2.imread(path)
-        if self.original is None:
-            messagebox.showerror("Error", "Could not load image. Please try another file.")
-            return
-            
-        self.current_image_path = path
-        self.final = self.original.copy()
-        self.feature_images = [None]*4
-        
-        # Update status
-        filename = os.path.basename(path)
-        self.status_label.config(
-            text=f"Loaded: {filename} ({self.original.shape[1]}x{self.original.shape[0]})",
-            fg="#4ecdc4"
-        )
-        
-        # Log message
-        self.log_message(f"✅ Image loaded: {filename}")
-        self.log_message(f"   Size: {self.original.shape[1]}x{self.original.shape[0]}")
-        self.log_message(f"   Original brightness: {self.get_brightness(self.original):.1f}")
-        
-        self.update_top_canvas()
-        self.update_feature_canvases()
-
-    def get_brightness(self, image):
-        """Calculate brightness of an image"""
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        return np.mean(gray)
-
-    def apply_brightness_adjustment(self, image):
-        """
-        Custom brightness adjustment function that saves to output folder
-        and returns the enhanced image for GUI display
-        """
-        try:
-            self.log_message("⚡ Applying brightness adjustment...")
-            
-            # Use the apply_and_save function from adjust_Brightness
-            enhanced_img, output_info = adjust_Brightness.apply_and_save(image.copy())
-            
-            # Log the results
-            brightness_change = output_info['enhanced_brightness'] - output_info['original_brightness']
-            self.log_message(f"   Selected: {output_info['enhancement_info']['name']}")
-            self.log_message(f"   Brightness change: {brightness_change:+.1f}")
-            self.log_message(f"   Saved to: {os.path.basename(output_info['enhanced_image_path'])}")
-            self.log_message(f"   Comparison saved to: comparisons/{os.path.basename(output_info['comparison_image_path'])}")
-            
-            return enhanced_img
-            
-        except Exception as e:
-            self.log_message(f"❌ Error in brightness adjustment: {str(e)}", "#ff6b6b")
-            return image  # Return original if error
-
-    def apply_feature(self, idx):
-        if self.original is None:
-            messagebox.showwarning("No Image", "Please load an image first!")
-            return
-        
-        try:
-            self.log_message(f"🔧 Applying {self.feature_names[idx]}...")
-            
-            # Apply the feature
-            if idx == 0:  # Brightness adjustment (special handling)
-                enhanced_img = self.features[idx](self.original.copy())
-            else:
-                enhanced_img = self.features[idx](self.original.copy())
-            
-            # Update feature preview with enhanced image
-            self.feature_images[idx] = enhanced_img
-            
-            # Update final image cumulatively
-            if idx == 0:
-                # For brightness, replace final with enhanced
-                self.final = enhanced_img.copy()
-            else:
-                # For other features, apply to final cumulatively
-                self.final = self.features[idx](self.final.copy())
-            
-            # Highlight the applied feature label
-            self.feature_labels[idx].config(fg="#ffcc00")
-            
-            # Update display
-            self.update_top_canvas()
-            self.update_feature_canvases()
-            
-            # Update status
-            if idx == 0:
-                current_brightness = self.get_brightness(self.final)
-                self.status_label.config(
-                    text=f"Brightness adjusted: {current_brightness:.1f}",
-                    fg="#ffcc00"
-                )
-            
-            self.log_message(f"✅ {self.feature_names[idx]} applied successfully")
-            
-        except Exception as e:
-            self.log_message(f"❌ Error applying {self.feature_names[idx]}: {str(e)}", "#ff6b6b")
-
-    def apply_all(self):
-        if self.original is None:
-            messagebox.showwarning("No Image", "Please load an image first!")
-            return
-        
-        try:
-            self.log_message("✨ Starting to apply all features...")
-            
-            # Reset final image
-            self.final = self.original.copy()
-            
-            # Apply all features sequentially
-            for i in range(4):
-                self.log_message(f"   Applying {self.feature_names[i]}...")
-                
-                if i == 0:  # Brightness adjustment
-                    enhanced_img = self.features[i](self.original.copy())
-                else:
-                    enhanced_img = self.features[i](self.original.copy())
-                
-                # Update feature preview
-                self.feature_images[i] = enhanced_img
-                
-                # Update final image
-                if i == 0:
-                    self.final = enhanced_img.copy()
-                else:
-                    self.final = self.features[i](self.final.copy())
-                
-                # Highlight the feature label
-                self.feature_labels[i].config(fg="#ffcc00")
-                
-                self.log_message(f"   ✓ {self.feature_names[i]} done")
-            
-            # Update display
-            self.update_top_canvas()
-            self.update_feature_canvases()
-            
-            # Update status
-            final_brightness = self.get_brightness(self.final)
-            self.status_label.config(
-                text=f"All features applied! Final brightness: {final_brightness:.1f}",
-                fg="#ffcc00"
-            )
-            
-            self.log_message("✅ All features applied successfully!")
-            
-        except Exception as e:
-            self.log_message(f"❌ Error applying all features: {str(e)}", "#ff6b6b")
-
-    def reset_all(self):
-        if self.original is None:
-            return
-        
-        # Reset to original
-        self.final = self.original.copy()
-        self.feature_images = [None]*4
-        
-        # Reset feature labels
-        for label in self.feature_labels:
-            label.config(fg="white")
-        
-        # Reset status
-        if self.current_image_path:
-            filename = os.path.basename(self.current_image_path)
-            self.status_label.config(
-                text=f"Reset: {filename}",
-                fg="#888888"
-            )
-        
-        # Log reset
-        self.log_message("🔄 All features reset to original")
-        
-        # Update display
-        self.update_top_canvas()
-        self.update_feature_canvases()
-
-    def save_final_image(self):
-        if self.final is None:
-            messagebox.showwarning("No Image", "No image to save!")
-            return
-        
-        # Ask user for save location
-        save_path = filedialog.asksaveasfilename(
-            title="Save Final Image",
-            defaultextension=".jpg",
-            filetypes=[
-                ("JPEG files", "*.jpg"),
-                ("PNG files", "*.png"),
-                ("All files", "*.*")
-            ]
-        )
-        
-        if save_path:
+        if file_path:
             try:
-                cv2.imwrite(save_path, self.final)
-                self.log_message(f"💾 Final image saved to: {save_path}")
-                messagebox.showinfo("Success", f"Image saved successfully!\n{save_path}")
+                # Read image
+                self.original_image = cv2.imread(file_path)
+                if self.original_image is None:
+                    messagebox.showerror("Error", "Could not load image file")
+                    return
+                
+                # Store a working copy
+                self.current_image = self.original_image.copy()
+                
+                # Display original image
+                self.display_image(self.original_image, self.original_canvas)
+                
+                # Clear output
+                self.output_canvas.delete("all")
+                self.output_canvas.create_text(300, 250, 
+                    text="Process image to see output", 
+                    font=('Arial', 14), fill='gray')
+                
+                # Reset feature status
+                for feature in self.feature_labels:
+                    self.feature_labels[feature].config(text="Not processed", fg='gray')
+                
+                # Enable process button
+                self.process_btn.config(state='normal')
+                
+                # Update status
+                filename = os.path.basename(file_path)
+                self.status_label.config(text=f"Loaded: {filename} ({self.original_image.shape[1]}x{self.original_image.shape[0]})")
+                
+                # Reset output info
+                self.output_images = {}
+                self.output_info = {}
+                
             except Exception as e:
-                self.log_message(f"❌ Error saving image: {str(e)}", "#ff6b6b")
-                messagebox.showerror("Error", f"Failed to save image:\n{str(e)}")
-
-    def open_output_folder(self):
-        """Open the output folder in file explorer"""
-        try:
-            if os.path.exists(self.output_dir):
-                os.startfile(self.output_dir) if os.name == 'nt' else os.system(f'open "{self.output_dir}"')
-                self.log_message(f"📂 Opened output folder: {self.output_dir}")
-            else:
-                self.log_message("ℹ️ Output folder doesn't exist yet", "#ffcc00")
-        except Exception as e:
-            self.log_message(f"❌ Error opening output folder: {str(e)}", "#ff6b6b")
-
-    def update_top_canvas(self):
-        if self.original is None or self.final is None:
+                messagebox.showerror("Error", f"Failed to load image: {str(e)}")
+    
+    def display_image(self, image, canvas):
+        """Display an image on a canvas"""
+        # Convert BGR to RGB
+        if len(image.shape) == 3:
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        
+        # Convert to PIL Image
+        pil_image = Image.fromarray(image_rgb)
+        
+        # Resize to fit canvas while maintaining aspect ratio
+        canvas_width = canvas.winfo_width() - 20
+        canvas_height = canvas.winfo_height() - 20
+        
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width, canvas_height = 600, 500
+        
+        img_width, img_height = pil_image.size
+        ratio = min(canvas_width / img_width, canvas_height / img_height)
+        new_size = (int(img_width * ratio), int(img_height * ratio))
+        pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # Convert to PhotoImage
+        self.tk_image = ImageTk.PhotoImage(pil_image)
+        
+        # Clear canvas and display image
+        canvas.delete("all")
+        canvas.create_image(canvas_width // 2, canvas_height // 2, 
+                          anchor='center', image=self.tk_image)
+    
+    def process_all_features(self):
+        """Process all 4 features in sequence"""
+        if self.original_image is None:
+            messagebox.showwarning("Warning", "Please load an image first")
             return
         
+        if self.processing:
+            return
+        
+        # Start processing in a separate thread
+        self.processing = True
+        self.process_btn.config(state='disabled')
+        self.progress.pack(pady=5)
+        self.progress.start()
+        
+        threading.Thread(target=self.process_features_thread, daemon=True).start()
+    
+    def process_features_thread(self):
+        """Thread function to process all features"""
         try:
-            before = cv2.cvtColor(self.original, cv2.COLOR_BGR2RGB)
-            after = cv2.cvtColor(self.final, cv2.COLOR_BGR2RGB)
+            # Reset output
+            self.output_images = {}
+            self.output_info = {}
             
-            # Calculate target size for canvas
-            canvas_width = self.top_canvas.winfo_width() or 800
-            canvas_height = self.top_canvas.winfo_height() or 400
+            # Start with original image
+            current_image = self.original_image.copy()
             
-            # Calculate sizes for side-by-side display
-            each_width = canvas_width // 2 - 20
+            # Update status
+            self.update_status("Processing brightness adjustment...")
+            self.root.after(0, lambda: self.feature_labels['brightness'].config(
+                text="Processing...", fg='blue'))
             
-            # Resize images proportionally
-            scale = min(each_width / before.shape[1], canvas_height / before.shape[0])
-            new_width = int(before.shape[1] * scale)
-            new_height = int(before.shape[0] * scale)
+            # 1. Brightness adjustment
+            bright_img, bright_info = apply_brightness(
+                current_image, 
+                output_dir="outputs/brightness"
+            )
+            self.output_images['brightness'] = bright_img
+            self.output_info['brightness'] = bright_info
+            current_image = bright_img.copy()
+            self.root.after(0, lambda: self.feature_labels['brightness'].config(
+                text=f"Saved: {bright_info.get('filename', 'N/A')}", fg='green'))
             
-            before_resized = cv2.resize(before, (new_width, new_height))
-            after_resized = cv2.resize(after, (new_width, new_height))
+            # 2. Sharpening
+            self.update_status("Processing sharpening...")
+            self.root.after(0, lambda: self.feature_labels['sharpening'].config(
+                text="Processing...", fg='blue'))
             
-            # Create combined image with separator
-            separator = np.zeros((new_height, 10, 3), dtype=np.uint8)
-            separator[:, :, :] = [64, 64, 64]  # Gray separator
+            sharp_img, sharp_info = apply_sharpening(
+                current_image,
+                strength=1.0,
+                kernel_size=5,
+                output_dir="outputs/sharpening"
+            )
+            self.output_images['sharpening'] = sharp_img
+            self.output_info['sharpening'] = sharp_info
+            current_image = sharp_img.copy()
+            self.root.after(0, lambda: self.feature_labels['sharpening'].config(
+                text=f"Saved: {sharp_info.get('filename', 'N/A')}", fg='green'))
             
-            combined = cv2.hconcat([before_resized, separator, after_resized])
+            # 3. Blur
+            self.update_status("Processing blur...")
+            self.root.after(0, lambda: self.feature_labels['blur'].config(
+                text="Processing...", fg='blue'))
             
-            self.display_image(combined, self.top_canvas, center=True)
+            blur_img, blur_info = apply_blur(
+                current_image,
+                kernel_size=5,
+                output_dir="outputs/blur"
+            )
+            self.output_images['blur'] = blur_img
+            self.output_info['blur'] = blur_info
+            current_image = blur_img.copy()
+            self.root.after(0, lambda: self.feature_labels['blur'].config(
+                text=f"Saved: {blur_info.get('filename', 'N/A')}", fg='green'))
+            
+            # 4. Segmentation
+            self.update_status("Processing segmentation...")
+            self.root.after(0, lambda: self.feature_labels['segmentation'].config(
+                text="Processing...", fg='blue'))
+            
+            seg_img, seg_info = apply_segmentation(
+                current_image,
+                output_dir="outputs/segmentation"
+            )
+            self.output_images['segmentation'] = seg_img
+            self.output_info['segmentation'] = seg_info
+            final_image = seg_img.copy()
+            
+            self.root.after(0, lambda: self.feature_labels['segmentation'].config(
+                text=f"Saved: {seg_info.get('filename', 'N/A')}", fg='green'))
+            
+            # Save final output
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            final_path = os.path.join("outputs/final", f"final_output_{timestamp}.jpg")
+            cv2.imwrite(final_path, final_image)
+            
+            # Update GUI with final image
+            self.root.after(0, self.update_final_display, final_image)
+            
+            # Update status
+            self.update_status(f"All features processed! Final output saved.")
+            
+            # Show success message
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Success", 
+                f"All 4 features processed successfully!\n\n"
+                f"Outputs saved in:\n"
+                f"- outputs/brightness/\n"
+                f"- outputs/sharpening/\n"
+                f"- outputs/blur/\n"
+                f"- outputs/segmentation/\n"
+                f"- outputs/final/\n\n"
+                f"Check the folders for all processed images."
+            ))
             
         except Exception as e:
-            self.log_message(f"❌ Error updating top canvas: {str(e)}", "#ff6b6b")
-
-    def update_feature_canvases(self):
-        for i, c in enumerate(self.feature_canvases):
-            img = self.feature_images[i]
-            if img is None:
-                c.delete("all")
-                c.create_rectangle(0, 0, 300, 200, fill="#0e0e0f")
-                # Add placeholder text
-                c.create_text(150, 100, text=f"{self.feature_names[i]}\n(Not applied)",
-                            fill="#888888", font=("Arial", 11), justify="center")
-            else:
-                try:
-                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    self.display_image(img_rgb, c, center=True)
-                except Exception as e:
-                    c.delete("all")
-                    c.create_rectangle(0, 0, 300, 200, fill="#0e0e0f")
-                    c.create_text(150, 100, text="Error", fill="red", font=("Arial", 12))
-
-    def display_image(self, img, canvas, center=False):
-        try:
-            pil = Image.fromarray(img)
-            
-            # Get canvas dimensions
-            w = canvas.winfo_width() or 300
-            h = canvas.winfo_height() or 200
-            
-            # Calculate scaling
-            img_width, img_height = pil.size
-            scale = min(w / img_width, h / img_height)
-            new_width = int(img_width * scale)
-            new_height = int(img_height * scale)
-            
-            # Resize image
-            pil = pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
-            # Convert to PhotoImage
-            tk_img = ImageTk.PhotoImage(pil)
-            
-            # Clear canvas and display image
-            canvas.delete("all")
-            
-            if center:
-                # Center the image
-                x_offset = (w - new_width) // 2
-                y_offset = (h - new_height) // 2
-                canvas.create_image(x_offset, y_offset, image=tk_img, anchor="nw")
-            else:
-                canvas.create_image(0, 0, image=tk_img, anchor="nw")
-            
-            # Keep reference to prevent garbage collection
-            canvas.image = tk_img
-            
-        except Exception as e:
-            print(f"Display error: {e}")
-
+            self.root.after(0, lambda: messagebox.showerror(
+                "Processing Error", f"An error occurred: {str(e)}"))
+            self.update_status(f"Error: {str(e)}")
+        
+        finally:
+            # Clean up
+            self.processing = False
+            self.root.after(0, self.progress.stop)
+            self.root.after(0, self.progress.pack_forget)
+            self.root.after(0, lambda: self.process_btn.config(state='normal'))
+    
+    def update_status(self, message):
+        """Update status label from thread"""
+        self.root.after(0, lambda: self.status_label.config(text=message))
+    
+    def update_final_display(self, final_image):
+        """Update the final output display"""
+        self.display_image(final_image, self.output_canvas)
+        
+        # Store the final image
+        self.current_image = final_image.copy()
+        
+        # Show file paths in status
+        feature_count = len(self.output_info)
+        self.status_label.config(
+            text=f"Processed {feature_count} features. Check output folders for results."
+        )
 
 def main():
     root = tk.Tk()
-    app = ImageApp(root)
+    app = ImageProcessingGUI(root)
     root.mainloop()
 
-
 if __name__ == "__main__":
-    # Add numpy import for get_brightness method
-    import numpy as np
     main()
