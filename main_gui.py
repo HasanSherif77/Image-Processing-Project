@@ -3,10 +3,10 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 import cv2
 
-import feature1
-import feature2
-import feature3
-import feature4
+import adjust_Brightness
+import blur
+import sharpening
+import segmentation
 
 
 class ImageApp:
@@ -20,8 +20,8 @@ class ImageApp:
         self.final = None
         self.feature_images = [None]*4
 
-        self.features = [feature1.apply, feature2.apply,
-                         feature3.apply, feature4.apply]
+        self.features = [adjust_Brightness.apply, blur.apply,
+                         sharpening.apply, segmentation.apply]
         self.feature_names = ["Feature 1", "Feature 2", "Feature 3", "Feature 4"]
 
         self.build_ui()
