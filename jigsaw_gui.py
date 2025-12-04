@@ -26,12 +26,20 @@ class JigsawPipelineGUI:
         self.original_image = None
         self.final_image = None
         self.contour_image = None
+        self.assembled_image = None
         self.image_path = None
         self.best_result = None
-        
+
+        # Milestone 2 variables
+        self.matcher = None
+        self.assembly_suggestions = None
+        self.current_matches = None
+
         # Store references to images to prevent garbage collection
         self.original_photo_ref = None
         self.final_photo_ref = None
+        self.match_photo_ref = None
+        self.assembled_photo_ref = None
         
         # Setup GUI
         self.setup_gui()
@@ -99,10 +107,16 @@ class JigsawPipelineGUI:
         # Process button
         process_frame = ttk.LabelFrame(control_frame, text="Process", padding="5")
         process_frame.pack(side=tk.LEFT, fill=tk.Y)
-        
-        ttk.Button(process_frame, text="🚀 Process Selected Features", 
+
+        ttk.Button(process_frame, text="🚀 Process Selected Features",
                   command=self.process_selected_features, width=25).pack(pady=5)
-        
+
+        ttk.Button(process_frame, text="🔍 Run Edge Matching",
+                  command=self.run_edge_matching_gui, width=25).pack(pady=5)
+
+        ttk.Button(process_frame, text="🧩 Assemble Puzzle",
+                  command=self.assemble_puzzle_gui, width=25).pack(pady=5)
+
         # Status label on the far right
         self.status_label = ttk.Label(control_frame, text="Ready to load image")
         self.status_label.pack(side=tk.RIGHT, padx=10)
@@ -111,42 +125,59 @@ class JigsawPipelineGUI:
         comparison_frame = ttk.Frame(self.root)
         comparison_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0,10))
         
-        # Configure comparison grid
+        # Configure comparison grid (now 3 columns)
         comparison_frame.grid_rowconfigure(0, weight=1)
         comparison_frame.grid_columnconfigure(0, weight=1)
         comparison_frame.grid_columnconfigure(1, weight=1)
-        
+        comparison_frame.grid_columnconfigure(2, weight=1)
+
         # Left panel - Original image
         original_frame = ttk.LabelFrame(comparison_frame, text="Original Image", padding="10")
         original_frame.grid(row=0, column=0, sticky="nsew", padx=(0,5))
-        
+
         # Use a Frame with fixed size for the original image
-        self.original_image_frame = tk.Frame(original_frame, width=450, height=450, bg='#f0f0f0')
+        self.original_image_frame = tk.Frame(original_frame, width=300, height=300, bg='#f0f0f0')
         self.original_image_frame.pack_propagate(False)
         self.original_image_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
-        
+
         self.original_canvas = tk.Canvas(self.original_image_frame, bg='#f0f0f0', highlightthickness=1,
                                         highlightbackground="#cccccc")
         self.original_canvas.pack(fill=tk.BOTH, expand=True)
-        
+
         self.original_info = ttk.Label(original_frame, text="No image loaded")
         self.original_info.pack(pady=(5,0))
-        
-        # Right panel - FINAL Processed image (WITH CONTOURS)
-        processed_frame = ttk.LabelFrame(comparison_frame, text="Final Processed Image (With Contours)", padding="10")
-        processed_frame.grid(row=0, column=1, sticky="nsew", padx=(5,0))
-        
+
+        # Middle panel - FINAL Processed image (WITH CONTOURS)
+        processed_frame = ttk.LabelFrame(comparison_frame, text="Processed Image (With Contours)", padding="10")
+        processed_frame.grid(row=0, column=1, sticky="nsew", padx=(0,5))
+
         # Use a Frame with fixed size for the processed image
-        self.processed_image_frame = tk.Frame(processed_frame, width=450, height=450, bg='#f0f0f0')
+        self.processed_image_frame = tk.Frame(processed_frame, width=300, height=300, bg='#f0f0f0')
         self.processed_image_frame.pack_propagate(False)
         self.processed_image_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
-        
+
         self.processed_canvas = tk.Canvas(self.processed_image_frame, bg='#f0f0f0', highlightthickness=1,
                                          highlightbackground="#cccccc")
         self.processed_canvas.pack(fill=tk.BOTH, expand=True)
-        
+
         self.processed_info = ttk.Label(processed_frame, text="Select enhancements and click Process")
         self.processed_info.pack(pady=(5,0))
+
+        # Right panel - ASSEMBLED PUZZLE
+        assembled_frame = ttk.LabelFrame(comparison_frame, text="Assembled Puzzle", padding="10")
+        assembled_frame.grid(row=0, column=2, sticky="nsew", padx=(5,0))
+
+        # Use a Frame with fixed size for the assembled image
+        self.assembled_image_frame = tk.Frame(assembled_frame, width=300, height=300, bg='#f0f0f0')
+        self.assembled_image_frame.pack_propagate(False)
+        self.assembled_image_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+
+        self.assembled_canvas = tk.Canvas(self.assembled_image_frame, bg='#f0f0f0', highlightthickness=1,
+                                         highlightbackground="#cccccc")
+        self.assembled_canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.assembled_info = ttk.Label(assembled_frame, text="Run assembly after processing")
+        self.assembled_info.pack(pady=(5,0))
         
         # Log console at the bottom
         log_frame = ttk.LabelFrame(self.root, text="Processing Log", padding="10")
@@ -470,6 +501,110 @@ class JigsawPipelineGUI:
         thread = threading.Thread(target=process_thread)
         thread.daemon = True
         thread.start()
+
+    def run_edge_matching_gui(self):
+        """Run edge matching from GUI"""
+        if self.final_image is None:
+            messagebox.showwarning("Warning", "Please process an image first using 'Process Selected Features'")
+            return
+
+        # Get grid size from puzzle type
+        puzzle_type = self.puzzle_var.get()
+        grid_map = {"puzzle2x2": 2, "puzzle4x4": 4, "puzzle8x8": 8}
+        grid_size = grid_map[puzzle_type]
+
+        self.update_status("Running edge matching...")
+
+        # Clear log
+        self.log_text.delete(1.0, tk.END)
+
+        def matching_thread():
+            try:
+                self.log("=" * 60)
+                self.log("STARTING EDGE MATCHING")
+                self.log("=" * 60)
+
+                # Get output directory
+                output_dir = os.path.join(os.getcwd(), "output")
+
+                # Import here to avoid issues if not available
+                from jigsaw_matcher import run_milestone2_pipeline
+
+                # Run the matching pipeline
+                self.log("Running edge matching pipeline...")
+                self.matcher, self.assembly_suggestions = run_milestone2_pipeline(output_dir, grid_size)
+
+                if self.matcher is None:
+                    self.root.after(0, lambda: self.update_status("Edge matching failed"))
+                    return
+
+                self.log("Edge matching completed successfully!")
+                self.root.after(0, lambda: self.update_status("Edge matching complete! Ready to assemble."))
+
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "✅ Edge Matching Complete!",
+                    f"Successfully analyzed {len(self.matcher.edge_features)} puzzle pieces.\n\n"
+                    f"Ready to assemble the puzzle!"
+                ))
+
+            except Exception as e:
+                error_msg = str(e)
+                self.log(f"✗ ERROR: {error_msg}")
+                self.root.after(0, lambda: self.update_status("Edge matching failed"))
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Edge matching failed:\n{error_msg}"))
+
+        # Start matching thread
+        thread = threading.Thread(target=matching_thread)
+        thread.daemon = True
+        thread.start()
+
+    def assemble_puzzle_gui(self):
+        """Assemble the puzzle and display result in GUI"""
+        if self.matcher is None:
+            messagebox.showwarning("Warning", "Please run edge matching first using 'Run Edge Matching'")
+            return
+
+        self.update_status("Assembling puzzle...")
+
+        # Get grid size
+        puzzle_type = self.puzzle_var.get()
+        grid_map = {"puzzle2x2": 2, "puzzle4x4": 4, "puzzle8x8": 8}
+        grid_size = grid_map[puzzle_type]
+
+        try:
+            # Assemble the puzzle
+            assembled_image = self.matcher.assemble_puzzle_from_matches(grid_size)
+
+            if assembled_image is not None:
+                # Store and display the assembled image
+                self.assembled_image = assembled_image
+
+                # Display in the assembled canvas
+                self.root.after(0, lambda: self.display_image(
+                    self.assembled_image, self.assembled_canvas, is_bgr=True, is_original=False
+                ))
+
+                # Update info
+                self.root.after(0, lambda: self.assembled_info.config(
+                    text=f"✅ PUZZLE ASSEMBLED!\n{grid_size}x{grid_size} grid\n{len(self.matcher.edge_features)} pieces placed"
+                ))
+
+                self.update_status("Puzzle assembled successfully!")
+
+                messagebox.showinfo("🎉 Puzzle Assembled!",
+                                  f"Successfully assembled {grid_size}x{grid_size} puzzle!\n\n"
+                                  f"The solved puzzle is now displayed in the right panel.")
+
+            else:
+                self.update_status("Assembly failed")
+                messagebox.showerror("Error", "Failed to assemble the puzzle")
+
+        except Exception as e:
+            error_msg = str(e)
+            self.log(f"✗ Assembly ERROR: {error_msg}")
+            self.update_status("Assembly failed")
+            messagebox.showerror("Error", f"Puzzle assembly failed:\n{error_msg}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
