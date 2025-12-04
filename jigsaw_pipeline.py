@@ -1,5 +1,4 @@
 # Jigsaw Puzzle — Milestone 1 Pipeline
-# Extracted from jigsaw_pipeline_full.ipynb
 
 # Imports and parameters
 import cv2
