@@ -385,7 +385,7 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
             # Gamma Brighten
             gray_bright = cv2.cvtColor(gamma_bright_img, cv2.COLOR_BGR2GRAY)
             results.append({
-                'name': 'Gamma Brighten (gamma=0.5)',
+                'name': 'Gamma',
                 'image': gamma_bright_img,
                 'brightness': np.mean(gray_bright),
                 'contrast': np.std(gray_bright)
@@ -394,7 +394,7 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
             # Gamma Darken
             gray_dark = cv2.cvtColor(gamma_dark_img, cv2.COLOR_BGR2GRAY)
             results.append({
-                'name': 'Gamma Darken (gamma=2.0)',
+                'name': 'Gamma',
                 'image': gamma_dark_img,
                 'brightness': np.mean(gray_dark),
                 'contrast': np.std(gray_dark)
