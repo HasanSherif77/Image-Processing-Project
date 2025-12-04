@@ -1,28 +1,24 @@
 # Jigsaw Puzzle — Milestone 1 Pipeline
 
-# Imports and parameters
 import cv2
 import os
 import json
 import numpy as np
 from matplotlib import pyplot as plt
 import sys
-import shutil  # Added for file cleanup
+import shutil
 
-# Set UTF-8 encoding for Windows console output
 if sys.platform == 'win32':
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# Global variables that will be set when running the pipeline
-IMAGE_PATH = None   # Will be set by the user or GUI
-OUT_DIR = None      # Will be set by the user or GUI
-
-# Parameters (tweak if needed)
-FALLBACK_GRID = None   # set to (rows,cols) if auto-detect fails, e.g. (4,4)
-PADDING = 4            # pixels to include around tiles when cropping
-RESIZE_TO = None       # set e.g. (256,256) to resize tiles for uniformity, or None to keep original
+IMAGE_PATH = None  # Will be set by the user or GUI
+OUT_DIR = None  # Will be set by the user or GUI
+FALLBACK_GRID = None
+PADDING = 4
+RESIZE_TO = None
 SAVE_CONTOUR_NPY = True
 
 
@@ -47,7 +43,6 @@ def detect_pepper_noise_median(img, med_kernel=3, diff_threshold=25, ratio=0.002
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     median = cv2.medianBlur(gray, med_kernel)
 
-    # pepper = pixels much darker than the median neighborhood
     diff = median.astype(np.int32) - gray.astype(np.int32)
 
     pepper_pixels = np.sum(diff > diff_threshold)
@@ -63,7 +58,6 @@ def detect_blur(img, threshold=120):
 
 
 def enhance_image(img):
-    """Enhanced image with noise reduction"""
     print("\n===== IMAGE ANALYSIS =====")
 
     has_salt, salt_ratio = detect_salt_noise(img)
@@ -78,10 +72,10 @@ def enhance_image(img):
     print("==========================\n")
 
     if (
-        salt_ratio < 0.009 and
-        pepper_ratio < 0.009 and
-        noise_std < 70 and
-        not is_blurry
+            salt_ratio < 0.009 and
+            pepper_ratio < 0.009 and
+            noise_std < 70 and
+            not is_blurry
     ):
         print("Image is CLEAN → No enhancement applied.\n")
         return img.copy()
@@ -125,14 +119,12 @@ def edge_sharpening(image, strength=1.8, kernel_size=5):
 
 
 def apply_gamma_correction(image, gamma):
-    """Apply gamma correction with correct formula: output = input^(1/gamma)"""
     gamma_exp = 1.0 / gamma
     table = np.array([((i / 255.0) ** gamma_exp) * 255 for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(image, table)
 
 
 def apply_clahe(image):
-    """Apply CLAHE for contrast enhancement"""
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -140,31 +132,28 @@ def apply_clahe(image):
     return cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
 
 
-def create_final_comparison(original_img, best_result, output_dir=None):
-    """Create clean comparison between original and best result"""
+def create_final_comparison(original_img, best_result, enhanced_img, output_dir=None):
+
     if output_dir is None:
         output_dir = OUT_DIR
-        
-    # Calculate metrics
+
     gray_original = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
-    gray_best = cv2.cvtColor(best_result['image'], cv2.COLOR_BGR2GRAY)
+    gray_enhanced = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2GRAY)
 
     original_brightness = np.mean(gray_original)
-    best_brightness = np.mean(gray_best)
-    brightness_change = best_brightness - original_brightness
+    enhanced_brightness = np.mean(gray_enhanced)
+    brightness_change = enhanced_brightness - original_brightness
 
-    # Determine if we're comparing original to itself or to enhanced version
-    is_original_best = best_result['name'] == 'Original'
+    is_original_best = (np.array_equal(original_img, enhanced_img) or
+                        best_result['name'] == 'Original')
 
-    # Create comparison visualization
     if is_original_best:
-        # Single image display when original is best
         fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
         # Original Image
         axes[0].imshow(cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB))
         axes[0].set_title(f'ORIGINAL IMAGE (OPTIMAL)\nBrightness: {original_brightness:.1f}',
-                            fontsize=14, weight='bold', color='green')
+                          fontsize=14, weight='bold', color='green')
         axes[0].axis('off')
 
         # Original Histogram
@@ -187,29 +176,36 @@ def create_final_comparison(original_img, best_result, output_dir=None):
         # Original Image
         axes[0, 0].imshow(cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB))
         axes[0, 0].set_title(f'ORIGINAL\nBrightness: {original_brightness:.1f}',
-                            fontsize=14, weight='bold')
+                             fontsize=14, weight='bold')
         axes[0, 0].axis('off')
 
         # Original Histogram
         hist_original = cv2.calcHist([gray_original], [0], None, [256], [0, 256])
         axes[0, 1].plot(hist_original, color='blue')
         axes[0, 1].axvline(original_brightness, color='red', linestyle='--',
-                            label=f'Mean: {original_brightness:.1f}')
+                           label=f'Mean: {original_brightness:.1f}')
         axes[0, 1].set_title('Original Histogram')
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
 
-        # Best Enhanced Image
-        axes[1, 0].imshow(cv2.cvtColor(best_result['image'], cv2.COLOR_BGR2RGB))
-        axes[1, 0].set_title(f'ENHANCED: {best_result["name"]}\nBrightness: {best_brightness:.1f}',
-                            fontsize=14, weight='bold', color='green')
+        # Enhanced Image (FINAL image with all processing)
+        axes[1, 0].imshow(cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2RGB))
+
+        # Create enhancement description
+        if 'BrightnessContrast' in best_result['name']:
+            enhancement_desc = best_result['name']
+        else:
+            enhancement_desc = "Enhanced"
+
+        axes[1, 0].set_title(f'ENHANCED: {enhancement_desc}\nBrightness: {enhanced_brightness:.1f}',
+                             fontsize=14, weight='bold', color='green')
         axes[1, 0].axis('off')
 
-        # Best Histogram
-        hist_best = cv2.calcHist([gray_best], [0], None, [256], [0, 256])
-        axes[1, 1].plot(hist_best, color='green')
-        axes[1, 1].axvline(best_brightness, color='red', linestyle='--',
-                            label=f'Mean: {best_brightness:.1f}')
+        # Enhanced Histogram
+        hist_enhanced = cv2.calcHist([gray_enhanced], [0], None, [256], [0, 256])
+        axes[1, 1].plot(hist_enhanced, color='green')
+        axes[1, 1].axvline(enhanced_brightness, color='red', linestyle='--',
+                           label=f'Mean: {enhanced_brightness:.1f}')
         axes[1, 1].set_title('Enhanced Histogram')
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)
@@ -229,10 +225,9 @@ def create_final_comparison(original_img, best_result, output_dir=None):
     plt.tight_layout()
     plt.subplots_adjust(bottom=0.08)
 
-    # Save comparison with appropriate name
     visualizations_dir = os.path.join(output_dir, "visualizations")
     os.makedirs(visualizations_dir, exist_ok=True)
-    
+
     if is_original_best:
         comparison_path = os.path.join(visualizations_dir, "ORIGINAL_OPTIMAL_COMPARISON.jpg")
     else:
@@ -246,12 +241,11 @@ def create_final_comparison(original_img, best_result, output_dir=None):
 
 
 def cleanup_output_directory(output_dir):
-    """Clean up output directory to override old files"""
     print(f"\nCleaning up output directory: {output_dir}")
-    
+
     # List of subdirectories to clean
     subdirs = ["tiles", "edges", "contours", "visualizations", "data_enhanced", "final_image"]
-    
+
     for subdir in subdirs:
         dir_path = os.path.join(output_dir, subdir)
         if os.path.exists(dir_path):
@@ -269,7 +263,7 @@ def cleanup_output_directory(output_dir):
                 print(f"  Cleaned: {subdir}/")
             except Exception as e:
                 print(f"  Warning: Could not clean {subdir}/: {e}")
-    
+
     # Also clean any loose files in the main output directory
     if os.path.exists(output_dir):
         for filename in os.listdir(output_dir):
@@ -281,44 +275,42 @@ def cleanup_output_directory(output_dir):
                     print(f"Failed to delete {file_path}. Reason: {e}")
 
 
-def run_pipeline(image_path=None, output_dir=None, grid_size=None, 
+def run_pipeline(image_path=None, output_dir=None, grid_size=None,
                  apply_noise_reduction=True, apply_sharpening=True,
                  apply_gamma_correction_option=False, apply_clahe_option=False,
                  clean_output=True):
     """Main pipeline execution with OPTIMAL processing order
     Returns: (final_processed_image, final_image_with_contours, best_result)
-    
-    OPTIMAL ORDER: 
+
+    OPTIMAL ORDER:
     1. Noise reduction → 2. Brightness/Contrast → 3. Edge sharpening → 4. Grid/Contours
-    
+
     Parameters:
     - apply_noise_reduction: Apply blur/salt & pepper noise reduction
     - apply_sharpening: Apply edge sharpening
     - apply_gamma_correction_option: Apply gamma correction (if True, uses optimal gamma)
     - apply_clahe_option: Apply CLAHE contrast enhancement
     """
-    
-    # Set global variables
+
     global IMAGE_PATH, OUT_DIR
     if image_path is None:
         raise ValueError("Image path must be provided")
-    
+
     IMAGE_PATH = image_path
-    
+
     if output_dir is None:
         # Use current directory + 'output' as default
         output_dir = os.path.join(os.getcwd(), "output")
-    
+
     OUT_DIR = output_dir
-    
-    # Clean up output directory if requested
+
     if clean_output and os.path.exists(output_dir):
         cleanup_output_directory(output_dir)
-    
+
     # Create output directories
     DATA_ENHANCED_DIR = os.path.join(OUT_DIR, "data_enhanced")
     FINAL_IMAGE_DIR = os.path.join(OUT_DIR, "final_image")
-    
+
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(os.path.join(OUT_DIR, "tiles"), exist_ok=True)
     os.makedirs(os.path.join(OUT_DIR, "visualizations"), exist_ok=True)
@@ -326,37 +318,37 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
     os.makedirs(os.path.join(OUT_DIR, "contours"), exist_ok=True)
     os.makedirs(os.path.join(OUT_DIR, "edges"), exist_ok=True)
     os.makedirs(FINAL_IMAGE_DIR, exist_ok=True)
-    
+
     print(f"Output directory: {OUT_DIR}")
     print(f"Final image will be saved in: {FINAL_IMAGE_DIR}")
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("STARTING PIPELINE WITH OPTIMAL PROCESSING ORDER")
-    print("="*60)
+    print("=" * 60)
     print(f"User selected options:")
     print(f"  - Noise reduction: {'✓' if apply_noise_reduction else '✗'}")
     print(f"  - Gamma correction: {'✓' if apply_gamma_correction_option else '✗'}")
     print(f"  - CLAHE: {'✓' if apply_clahe_option else '✗'}")
     print(f"  - Edge sharpening: {'✓' if apply_sharpening else '✗'}")
-    print("="*60)
-    
-    # Load image
-    img = cv2.imread(IMAGE_PATH)
-    if img is None:
+    print("=" * 60)
+
+    # Load and preserve original image
+    original_img = cv2.imread(IMAGE_PATH)
+    if original_img is None:
         raise ValueError(f"Could not load image from {IMAGE_PATH}")
 
-    print(f"\n1. Original image loaded: {img.shape}")
-    print(f"   Original brightness: {np.mean(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)):.1f}")
+    print(f"\n1. Original image loaded: {original_img.shape}")
+    print(f"   Original brightness: {np.mean(cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)):.1f}")
 
-    # Start with original image
-    current_img = img.copy()
-    
+    # Start with original image for processing
+    current_img = original_img.copy()
+
     # Track what enhancements were applied
     applied_enhancements = []
-    
+
     # ========== OPTIMAL PROCESSING ORDER ==========
-    
-    # STEP 1: Noise reduction (if selected) - FIRST (OPTIMAL)
+
+    # STEP 1: Noise reduction
     if apply_noise_reduction:
         print(f"\n2. APPLYING NOISE REDUCTION (Step 1/3 - Optimal Order)...")
         current_img = enhance_image(current_img)
@@ -364,16 +356,16 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
         print(f"   ✓ Noise reduction applied (cleaned image for better processing)")
     else:
         print(f"\n2. Skipping NOISE REDUCTION (user request)")
-    
+
     # STEP 2: Brightness/Contrast enhancement (if selected) - SECOND (OPTIMAL)
     if apply_gamma_correction_option or apply_clahe_option:
         print(f"\n3. APPLYING BRIGHTNESS/CONTRAST ENHANCEMENT (Step 2/3 - Optimal Order)...")
-        
+
         # Create results list for comparison
         results = []
         original_brightness = np.mean(cv2.cvtColor(current_img, cv2.COLOR_BGR2GRAY))
         original_contrast = np.std(cv2.cvtColor(current_img, cv2.COLOR_BGR2GRAY))
-        
+
         # Add original to results
         results.append({
             'name': 'Original',
@@ -381,15 +373,15 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
             'brightness': original_brightness,
             'contrast': original_contrast
         })
-        
+
         # Apply gamma correction if selected
         if apply_gamma_correction_option:
             print(f"   Testing Gamma correction methods...")
-            
+
             # Test different gamma values
             gamma_bright_img = apply_gamma_correction(current_img, 0.5)  # Brighten
-            gamma_dark_img = apply_gamma_correction(current_img, 2.0)    # Darken
-            
+            gamma_dark_img = apply_gamma_correction(current_img, 2.0)  # Darken
+
             # Gamma Brighten
             gray_bright = cv2.cvtColor(gamma_bright_img, cv2.COLOR_BGR2GRAY)
             results.append({
@@ -398,7 +390,7 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
                 'brightness': np.mean(gray_bright),
                 'contrast': np.std(gray_bright)
             })
-            
+
             # Gamma Darken
             gray_dark = cv2.cvtColor(gamma_dark_img, cv2.COLOR_BGR2GRAY)
             results.append({
@@ -407,7 +399,7 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
                 'brightness': np.mean(gray_dark),
                 'contrast': np.std(gray_dark)
             })
-        
+
         # Apply CLAHE if selected
         if apply_clahe_option:
             print(f"   Testing CLAHE enhancement...")
@@ -419,51 +411,50 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
                 'brightness': np.mean(gray_clahe),
                 'contrast': np.std(gray_clahe)
             })
-        
+
         # Select best result based on scoring
         IDEAL_BRIGHTNESS_MIN, IDEAL_BRIGHTNESS_MAX = 80, 180
         IDEAL_CONTRAST_MIN = 30
-        
+
         best_result = None
         best_score = -9999
-        
+
         for result in results:
             score = 0
-            
+
             # Brightness scoring (closer to middle is better)
             mid_point = (IDEAL_BRIGHTNESS_MIN + IDEAL_BRIGHTNESS_MAX) / 2
             brightness_distance = abs(result['brightness'] - mid_point)
             brightness_score = 100 - (brightness_distance / mid_point * 100)
             score += brightness_score
-            
+
             # Contrast scoring (higher is better)
             if result['contrast'] >= IDEAL_CONTRAST_MIN:
                 contrast_score = 50
             else:
                 contrast_score = (result['contrast'] / IDEAL_CONTRAST_MIN) * 50
             score += contrast_score
-            
+
             # Bonus for original if already good
             if result['name'] == 'Original':
-                if IDEAL_BRIGHTNESS_MIN <= result['brightness'] <= IDEAL_BRIGHTNESS_MAX and result['contrast'] >= IDEAL_CONTRAST_MIN:
+                if IDEAL_BRIGHTNESS_MIN <= result['brightness'] <= IDEAL_BRIGHTNESS_MAX and result[
+                    'contrast'] >= IDEAL_CONTRAST_MIN:
                     score += 30
-            
+
             if score > best_score:
                 best_score = score
                 best_result = result
-        
-        # Update current image with best result
+
         current_img = best_result['image']
         applied_enhancements.append(f"BrightnessContrast({best_result['name']})")
-        
+
         print(f"   Selected: {best_result['name']}")
         print(f"   Brightness: {best_result['brightness']:.1f}")
         print(f"   Contrast: {best_result['contrast']:.1f}")
         print(f"   ✓ Brightness/contrast optimized (better for edge detection)")
-    
+
     else:
         print(f"\n3. Skipping BRIGHTNESS/CONTRAST ENHANCEMENT (user request)")
-        # Create a simple result for consistency
         original_brightness = np.mean(cv2.cvtColor(current_img, cv2.COLOR_BGR2GRAY))
         original_contrast = np.std(cv2.cvtColor(current_img, cv2.COLOR_BGR2GRAY))
         best_result = {
@@ -473,8 +464,8 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
             'contrast': original_contrast,
             'calculated_score': 0
         }
-    
-    # STEP 3: Edge sharpening (if selected) - THIRD (OPTIMAL)
+
+    # STEP 3: Edge sharpening
     if apply_sharpening:
         print(f"\n4. APPLYING EDGE SHARPENING (Step 3/3 - Optimal Order)...")
         current_img = edge_sharpening(current_img, strength=1.0, kernel_size=5)
@@ -482,22 +473,21 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
         print(f"   ✓ Edge sharpening applied (works best after contrast adjustment)")
     else:
         print(f"\n4. Skipping EDGE SHARPENING (user request)")
-    
-    # Save intermediate enhanced image
+
     input_filename = os.path.basename(IMAGE_PATH)
     name, ext = os.path.splitext(input_filename)
-    
+
     # Create enhancement name for filename
     if applied_enhancements:
         enhancement_name = "_".join(applied_enhancements)
     else:
         enhancement_name = "NoEnhancement"
-    
+
     enhanced_filename = f"{name}_enhanced_{enhancement_name}{ext}"
     enhanced_path = os.path.join(DATA_ENHANCED_DIR, enhanced_filename)
     cv2.imwrite(enhanced_path, current_img)
     print(f"\n   Saved enhanced image: {enhanced_filename}")
-    
+
     # STEP 4: GRID SEGMENTATION + TILE EXTRACTION + CONTOURS (ALWAYS APPLIED)
     # If grid_size not provided, infer from folder name
     if grid_size is None:
@@ -533,7 +523,7 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
 
     # Create a copy of the final image to draw contours on
     final_image_with_contours = img.copy()
-    
+
     # Also create image with grid lines
     final_image_with_grid = img.copy()
 
@@ -582,34 +572,34 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
     # Save visualization images
     cv2.imwrite(os.path.join(VIZ_DIR, "grid_visualization.png"), final_image_with_grid)
     cv2.imwrite(os.path.join(VIZ_DIR, "final_with_contours.png"), final_image_with_contours)
-    
+
     print(f"   ✓ Extracted {tile_count} tiles")
     print(f"   ✓ Detected contours on all tiles")
     print(f"   ✓ Added contour lines to final image")
 
     # STEP 5: Save final results
     print(f"\n6. SAVING FINAL RESULTS...")
-    
+
     # Create descriptive filename based on applied enhancements
     if applied_enhancements:
         enhancement_suffix = "_".join(applied_enhancements)
     else:
         enhancement_suffix = "NoEnhancement"
-    
+
     # Save final enhanced image (without contours)
     final_image_filename = f"{name}_final_{enhancement_suffix}{ext}"
     final_image_path = os.path.join(FINAL_IMAGE_DIR, final_image_filename)
     cv2.imwrite(final_image_path, current_img)
-    
+
     # Save final image with contours
     final_contour_filename = f"{name}_final_{enhancement_suffix}_with_contours{ext}"
     final_contour_path = os.path.join(FINAL_IMAGE_DIR, final_contour_filename)
     cv2.imwrite(final_contour_path, final_image_with_contours)
-    
+
     # Also save with generic names
     cv2.imwrite(os.path.join(FINAL_IMAGE_DIR, "PROCESSED_PUZZLE_IMAGE.jpg"), current_img)
     cv2.imwrite(os.path.join(FINAL_IMAGE_DIR, "PROCESSED_WITH_CONTOURS.jpg"), final_image_with_contours)
-    
+
     print(f"   ✓ Final enhanced image: {final_image_filename}")
     print(f"   ✓ Final image with contours: {final_contour_filename}")
     print(f"   ✓ Generic copies: PROCESSED_PUZZLE_IMAGE.jpg, PROCESSED_WITH_CONTOURS.jpg")
@@ -617,20 +607,21 @@ def run_pipeline(image_path=None, output_dir=None, grid_size=None,
     # STEP 6: Create comparison visualization (only if enhancements were applied)
     if applied_enhancements:
         print(f"\n7. CREATING COMPARISON VISUALIZATION...")
-        create_final_comparison(img, best_result, OUT_DIR)
+        # Pass: original, best_result, FINAL enhanced image
+        create_final_comparison(original_img, best_result, current_img, OUT_DIR)
         print(f"   ✓ Comparison visualization created")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PIPELINE COMPLETE - OPTIMAL PROCESSING ORDER USED")
-    print("="*60)
+    print("=" * 60)
     print(f"Processing order followed:")
     print(f"  1. Noise reduction: {'✓' if apply_noise_reduction else '✗'}")
     print(f"  2. Brightness/Contrast: {'✓' if (apply_gamma_correction_option or apply_clahe_option) else '✗'}")
     print(f"  3. Edge sharpening: {'✓' if apply_sharpening else '✗'}")
     print(f"  4. Grid segmentation: ✓ ({grid_size}x{grid_size})")
     print(f"  5. Contour extraction: ✓")
-    print("="*60)
-    
+    print("=" * 60)
+
     # Return BOTH images: enhanced image AND image with contours
     return current_img, final_image_with_contours, best_result
 
@@ -640,16 +631,16 @@ def main():
     # For backward compatibility - using hardcoded values
     image_path = "D:/Image-Processing-Project/Gravity_Falls/puzzle_4x4/3.jpg"
     output_dir = "D:/Image-Processing-Project/output"
-    
+
     print("Running pipeline with hardcoded values (for testing)")
     print(f"Image path: {image_path}")
     print(f"Output directory: {output_dir}")
-    
+
     try:
         final_img, contour_img, best_result = run_pipeline(
-            image_path=image_path, 
-            output_dir=output_dir, 
-            grid_size=4, 
+            image_path=image_path,
+            output_dir=output_dir,
+            grid_size=4,
             apply_noise_reduction=True,
             apply_sharpening=True,
             apply_gamma_correction_option=True,
