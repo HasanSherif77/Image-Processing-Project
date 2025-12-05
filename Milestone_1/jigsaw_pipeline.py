@@ -1,4 +1,4 @@
-# Jigsaw Puzzle — Milestone 1 Pipeline
+# Jigsaw Puzzle — Milestone_1 1 Pipeline
 
 import cv2
 import os
