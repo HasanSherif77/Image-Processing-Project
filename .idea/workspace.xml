@@ -5,14 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a8562980-7276-421d-9695-f3ccf172618a" name="Changes" comment="preparation for Milestone 2">
-      <change afterPath="$PROJECT_DIR$/Milestone_2/piece_features.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/contour_matcher.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/gui_extended.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/puzzle_assembler.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/rotation_invariant.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/visualization.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/run_milestone2.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Milestone_2/piece_features.py" beforeDir="false" afterPath="$PROJECT_DIR$/Milestone_2/piece_extractor.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,6 +55,7 @@
     "Python.gui_extended.executor": "Run",
     "Python.jigsaw_gui.executor": "Run",
     "Python.jigsaw_pipeline.executor": "Run",
+    "Python.piece_extractor.executor": "Run",
     "Python.run_milestone2.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
@@ -145,7 +140,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764928076231</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="preparation for Milestone 2">
+      <option name="closed" value="true" />
+      <created>1764932095463</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1764932095463</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
