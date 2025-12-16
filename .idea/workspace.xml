@@ -5,10 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a8562980-7276-421d-9695-f3ccf172618a" name="Changes" comment="Trying a new approach">
-      <change afterPath="$PROJECT_DIR$/Milestone_2/Jigsaw_solver.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Milestone_2/jigsaw_gui.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Milestone_2/batch_process_puzzles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Milestone_2/batched_gui.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Milestone_2/piece_extractor.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Milestone_2/Jigsaw_solver.py" beforeDir="false" afterPath="$PROJECT_DIR$/Milestone_2/Jigsaw_solver.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Milestone_2/jigsaw_gui.py" beforeDir="false" afterPath="$PROJECT_DIR$/Milestone_2/jigsaw_gui.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -18,6 +19,7 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
+        <option value="Jupyter Notebook" />
         <option value="Python Script" />
       </list>
     </option>
@@ -53,7 +55,10 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.Batch_Test.executor": "Run",
     "Python.Jigsaw_solver.executor": "Run",
+    "Python.batch_process_puzzles.executor": "Run",
+    "Python.batched_gui.executor": "Run",
     "Python.gammaCorrection.executor": "Run",
     "Python.gui_extended.executor": "Run",
     "Python.jigsaw_gui.executor": "Run",
